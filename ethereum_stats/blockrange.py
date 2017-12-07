@@ -117,18 +117,6 @@ class BlockHeader:
                 blk_number = mid_nbr
                 break
         if blk_number == 0:
-            # if mid_nbr < last_nbr and top:
-            #     blk_number = last_nbr
-            # elif mid_nbr < last_nbr and not top:
-            #     blk_number = last_nbr + 1
-            # elif mid_nbr == last_nbr and top:
-            #     blk_number = mid_nbr - 1
-            # elif mid_nbr == last_nbr and not top:
-            #     blk_number = mid_nbr
-            # elif mid_nbr > last_nbr and top:
-            #     blk_number = last_nbr - 1
-            # elif mid_nbr > last_nbr and not top:
-            #     blk_number = last_nbr
             if mid_timestamp < timestamp and top:
                 blk_number = mid_nbr
             elif mid_timestamp < timestamp and not top:
@@ -186,8 +174,6 @@ class BlockRange:
         step = -1
         while state.is_in_db:
             blk = BlockHeader.get_block_header_by_number(blk.number + step)
-             
-
 
     def __iter__(self):
         return self
