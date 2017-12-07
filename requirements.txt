@@ -1,0 +1,12 @@
+matplotlib
+numpy
+pandas
+pytest
+rlp
+leveldb
+ethereum
+web3
+eth_utils
+py-geth
+
+
