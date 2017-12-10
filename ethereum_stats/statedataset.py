@@ -71,14 +71,6 @@ class StateDataset:
     def __init__(self, db, state_root):
         self.db = db
         if isinstance(state_root, str):
-            # if str == 'latest':
-            #     last_blk = BlockHeader.get_latest_block_header()
-            #     self.state_root = decode_hex(last_blk.state_root)
-            #     pass
-            # elif str == 'first':
-            #     pass
-            # else:
-            #     self.state_root = decode_hex(state_root)
             self.state_root = decode_hex(state_root)
         else:
             self.state_root = state_root
