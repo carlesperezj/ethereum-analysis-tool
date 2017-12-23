@@ -3,10 +3,11 @@ import os
 import random
 import shutil
 import time
-from datetime import datetime
 
 import pytest
 import web3
+from eth_utils import decode_hex
+from solc import compile_source
 
 from ethereum_stats import levelDB
 from ethereum_stats.process import DevGethProcessWithLogging
@@ -17,21 +18,45 @@ ACCOUNT_PASSPHRASE = 'the-passphrase'
 TESTING_NETWORK = 'testing'
 CLIENT_NODE_DIR = '/home/ethereum/eth-private/private'
 DB_DIR = CLIENT_NODE_DIR + '/' + TESTING_NETWORK + '/geth/chaindata'
+# set to false on the first run and any other time when test db needs regenerating
 RE_USE_DB = True
 LOGGING_LEVEL = logging.WARNING
 
 logging.basicConfig(level=LOGGING_LEVEL)
+SOLC_PATH = '/usr/bin/solc'
+
+# Contract sourced from https://github.com/ethereum/go-ethereum/wiki/Contract-Tutorial
+CONTRACT_SOURCE_CODE = '''
+contract token { 
+    mapping (address => uint) public coinBalanceOf;
+    event CoinTransfer(address sender, address receiver, uint amount);
+  
+  /* Initializes contract with initial supply tokens to the creator of the contract */
+  function token(uint supply) {
+        coinBalanceOf[msg.sender] = supply;
+    }
+  
+  /* Very simple trade function */
+    function sendCoin(address receiver, uint amount) returns(bool sufficient) {
+        if (coinBalanceOf[msg.sender] < amount) return false;
+        coinBalanceOf[msg.sender] -= amount;
+        coinBalanceOf[receiver] += amount;
+        CoinTransfer(msg.sender, receiver, amount);
+        return true;
+    }
+}
+'''
 
 
 class PrivateNetwork:
-    def __init__(self, client_node, db, w3, coinbase, accounts):
-        # def __init__(self, client_node, w3, coinbase, accounts):
+    def __init__(self, client_node, db, w3, coinbase, accounts, contract_address):
 
         self.client_node = client_node
         self.db = db
         self.w3 = w3
         self.coinbase = coinbase
         self.accounts = accounts
+        self.contract_address = contract_address
 
         logging.info('Private network created')
 
@@ -77,6 +102,14 @@ class PrivateNetwork:
         else:
             nonce = self.w3.eth.getTransactionCount(account, block_number)
         return nonce
+
+    def get_account_code_size(self, account, block_number=None):
+        if block_number is None:
+            code = self.w3.eth.getCode(account)
+        else:
+            code = self.w3.eth.getCode(account, block_number)
+        code_size = len(decode_hex(code))
+        return code_size
 
     def get_block(self, block_number=None):
         if block_number is None:
@@ -187,6 +220,25 @@ def initial_scenario():
         accounts.remove(coinbase)
         logging.info('List of accounts\n%s\ncoinbase %s', accounts, coinbase)
 
+    w3.personal.unlockAccount(coinbase, passphrase=ACCOUNT_PASSPHRASE, duration=0)
+    compiled_contract = compile_source(CONTRACT_SOURCE_CODE)
+    contract_interface = compiled_contract['<stdin>:token']
+    contract = w3.eth.contract(contract_interface['abi'], bytecode=contract_interface['bin'])
+    txn_hash = contract.deploy(transaction={'from': coinbase, 'gas': 410000}, args=(random.randrange(1000, 10000),))
+    not_yet_in_block = True
+    while not_yet_in_block:
+        txn = w3.eth.getTransaction(txn_hash)
+        if txn['blockNumber'] is not None:
+            not_yet_in_block = False
+            blk_nbr = txn['blockNumber']
+            logging.info('Transaction added to block\n\ttxn: %s', '\n\tblock: %i\n\tfrom %s',
+                         txn_hash, blk_nbr, txn['from'])
+        else:
+            time.sleep(0.5)
+
+    txn_receipt = w3.eth.getTransactionReceipt(txn_hash)
+    contract_address = txn_receipt['contractAddress']
+
     logging.info('Stop mining')
     w3.miner.stop()
     db = levelDB.LevelDB(DB_DIR)
@@ -195,7 +247,7 @@ def initial_scenario():
     # for k, v in db.db.RangeIter():
     #     print(k, encode_hex(v))
 
-    private_network = PrivateNetwork(client_node, db, w3, coinbase, accounts)
+    private_network = PrivateNetwork(client_node, db, w3, coinbase, accounts, contract_address)
 
     logging.info('Private network for testing ready')
     yield private_network

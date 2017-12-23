@@ -8,8 +8,6 @@ from eth_utils import (encode_hex, to_canonical_address, decode_hex)
 from ethereum import utils
 from ethereum.trie import Trie
 
-from ethereum_stats.blockrange import BlockHeader
-
 BLANK_ROOT = encode_hex(utils.sha3rlp(b''))
 BLANK_CODE = encode_hex(utils.sha3(b''))
 BLANK_RLP = rlp.encode(b'')
@@ -59,7 +57,12 @@ class Account:
     # TODO
     @property
     def contract_code_size(self):
-        return 100 if self.is_contract else 0
+        if self.is_contract:
+            code = self.db.get(encode_hex(self.contract_code))
+            contract_size = len(code)
+        else:
+            contract_size = 0
+        return contract_size
 
     # TODO
     @property
@@ -90,14 +93,17 @@ class StateDataset:
         for k in self.trie:
             try:
                 address = encode_hex(self.db.get(b'secure-key-' + k))
+                key_in_db = True
             except KeyError:
                 address = encode_hex(k)
+                key_in_db = False
                 logging.info('secure-key-%s not found', k)
             try:
-                acc = Account.from_rlp(address, self.trie[k])
+                acc = Account.from_rlp(address, key_in_db, self.trie[k])
             except KeyError:
                 logging.error('value in trie for %s not found', k)
-            state_dict[acc.address] = (acc.nonce, acc.balance, acc.storage_root, acc.contract_code, acc.is_address_in_db)
+            state_dict[acc.address] = (acc.nonce, acc.balance, acc.storage_root, acc.contract_code,
+                                       acc.is_address_in_db)
         return state_dict
 
     def to_panda_dataframe(self):
@@ -129,9 +135,20 @@ class StateDataset:
         return df
 
     def get_account(self, address):
+        key = utils.sha3(to_canonical_address(address))
         try:
-            rlp_data = self.trie.get(utils.sha3(to_canonical_address(address)))
-            acc = Account.from_rlp(address, rlp_data)
+            if address == encode_hex(self.db.get(b'secure-key-' + key)):
+                key_in_db = True
+            else:
+                key_in_db = False
+                logging.info('secure-key- %s found but does not match with address %s', key, address)
+        except KeyError:
+            key_in_db = False
+            logging.info('secure-key- %s not found', key)
+
+        try:
+            rlp_data = self.trie.get(key)
+            acc = Account.from_rlp(address, key_in_db, rlp_data)
         except KeyError:
             acc = Account.notFound(address)
         return acc

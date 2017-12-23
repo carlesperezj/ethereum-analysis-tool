@@ -32,17 +32,6 @@ def test_get_latest_block_header_number(initial_scenario):
     assert w3_latest_block['number'] == BlockHeader.get_latest_block_header_number(initial_scenario.get_db())
 
 
-# def test_caca(initial_scenario):
-#     test_db = initial_scenario.get_db()
-#     latest_block_nbr = BlockHeader.get_latest_block_header_number(test_db)
-#     for blk in BlockRange(test_db, 1, latest_block_nbr):
-#         print('block nbr', blk.number)
-#         blk_ts = blk.timestamp
-#         w3_blk = initial_scenario.get_block(blk.number)
-#         w3_ts = w3_blk['timestamp']
-#         print('w3 ', w3_ts, datetime.utcfromtimestamp(w3_ts).strftime('%Y-%m-%dT%H:%M:%S %Z'))
-#         print('API', blk_ts, datetime.utcfromtimestamp(blk_ts).strftime('%Y-%m-%dT%H:%M:%S %Z'))
-
 def test_get_block_number_by_timestamp(initial_scenario):
     test_db = initial_scenario.get_db()
     latest_block_nbr = BlockHeader.get_latest_block_header_number(test_db)
