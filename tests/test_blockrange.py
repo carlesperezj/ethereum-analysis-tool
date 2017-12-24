@@ -29,11 +29,11 @@ def compare_blk_hdrs(w3_blk, blk):
 
 def test_get_latest_block_header_number(initial_scenario):
     w3_latest_block = initial_scenario.get_block()
-    assert w3_latest_block['number'] == BlockHeader.get_latest_block_header_number(initial_scenario.get_db())
+    assert w3_latest_block['number'] == BlockHeader.get_latest_block_header_number(initial_scenario.db)
 
 
 def test_get_block_number_by_timestamp(initial_scenario):
-    test_db = initial_scenario.get_db()
+    test_db = initial_scenario.db
     latest_block_nbr = BlockHeader.get_latest_block_header_number(test_db)
     nbr_test = 0
     while nbr_test < NBR_RANDOM_TESTS:
@@ -64,7 +64,7 @@ def test_get_block_number_by_timestamp(initial_scenario):
 
 def test_get_latest_block_header(initial_scenario):
     w3_latest_block = initial_scenario.get_block()
-    latest_block = BlockHeader.get_latest_block_header(initial_scenario.get_db())
+    latest_block = BlockHeader.get_latest_block_header(initial_scenario.db)
     compare_blk_hdrs(w3_latest_block, latest_block)
 
 
@@ -77,7 +77,7 @@ def test_block_header(initial_scenario):
             w3_blk = initial_scenario.get_block(random.randrange(1, latest_block_nbr))
             if len(w3_blk['transactions']) > 0:
                 is_block_with_txn = True
-        blk = BlockHeader.get_block_header_by_number(initial_scenario.get_db(), w3_blk['number'])
+        blk = BlockHeader.get_block_header_by_number(initial_scenario.db, w3_blk['number'])
         compare_blk_hdrs(w3_blk, blk)
 
 
@@ -91,15 +91,15 @@ def test_block_range(initial_scenario):
             upper = random.randrange(1, latest_block_nbr)
             if upper > lower:
                 is_proper_range = True
-        for blk in BlockRange(initial_scenario.get_db(), lower, upper):
+        for blk in BlockRange(initial_scenario.db, lower, upper):
             w3_blk = initial_scenario.get_block(blk.number)
             compare_blk_hdrs(w3_blk, blk)
         with raises(ValueError, message='Lower limit cannot be greater than upper limit'):
-            BlockRange(initial_scenario.get_db(), upper, lower)
+            BlockRange(initial_scenario.db, upper, lower)
 
 
 def test_date_range(initial_scenario):
-    test_db = initial_scenario.get_db()
+    test_db = initial_scenario.db
     with raises(ValueError, message='Cannot parse date'):
         BlockRange.date_range(test_db, '2017/11/3', '2017/11/4')
     with raises(ValueError, message='Lower limit cannot be greater than upper limit'):

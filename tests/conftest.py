@@ -6,7 +6,7 @@ import time
 
 import pytest
 import web3
-from eth_utils import decode_hex
+from eth_utils import decode_hex, to_normalized_address
 from solc import compile_source
 
 from ethereum_stats import levelDB
@@ -29,6 +29,9 @@ SOLC_PATH = '/usr/bin/solc'
 CONTRACT_SOURCE_CODE = '''
 contract token { 
     mapping (address => uint) public coinBalanceOf;
+    uint8 int1 = 234;
+    uint8 int2 = 123;
+    string  text = "1234567890123456789012345678901234567890";
     event CoinTransfer(address sender, address receiver, uint amount);
   
   /* Initializes contract with initial supply tokens to the creator of the contract */
@@ -46,43 +49,60 @@ contract token {
     }
 }
 '''
+# uint8 int1 and int2 will be packed together in a single word
+# string text as a variable size array will be split in two 32 byte words plus an extra word to store the length
+# mapping of uint coinBalanceOf will use a word for each element, if we are storing the supply at deployment plus
+# and  n extra sendCoin call, then it will use 1 + n words.
+CONTRACT_NBR_WORDS = 1 + 3 + 1
 
 
 class PrivateNetwork:
-    def __init__(self, client_node, db, w3, coinbase, accounts, contract_address):
+    def __init__(self, client_node, w3, coinbase, accounts, contract_address, contract_storage_size, db):
 
         self.client_node = client_node
-        self.db = db
         self.w3 = w3
         self.coinbase = coinbase
         self.accounts = accounts
         self.contract_address = contract_address
+        self.contract_storage_size = contract_storage_size
+        self.db = db
 
         logging.info('Private network created')
 
-    def transfer_funds(self, to_acc, from_acc, value):
+    @classmethod
+    def init_private_network(cls, client_node, w3, coinbase):
+        return cls(client_node, w3, coinbase, [], "", 0, None)
+
+    def wait_for_txn_process(self, txn_hash, delay):
         blk_nbr = -1
+        not_yet_in_block = True
+        while not_yet_in_block:
+            txn = self.w3.eth.getTransaction(txn_hash)
+            blk_nbr = txn['blockNumber']
+            if blk_nbr is not None:
+                not_yet_in_block = False
+                logging.info('Transaction added to block\n\ttxn: %s\n\tblock: %i', txn_hash, blk_nbr)
+            else:
+                time.sleep(delay)
+        return blk_nbr
+
+    def add_account(self, account):
+        self.accounts.append(account)
+
+    def transfer_funds(self, to_acc, from_acc, value):
         if not self.w3.eth.mining:
             self.w3.miner.start(1)
         txn_hash = self.w3.eth.sendTransaction({'to': to_acc, 'from': from_acc, 'value': value})
 
         logging.info('Waiting for txn to be added to a block')
-        not_yet_in_block = True
-        while not_yet_in_block:
-            txn = self.w3.eth.getTransaction(txn_hash)
-            if txn['blockNumber'] is not None:
-                not_yet_in_block = False
-                blk_nbr = txn['blockNumber']
-                logging.info('Transaction added to block\n\ttxn: %s', '\n\tin block: %i', '\n\tfrom account %s',
-                             txn_hash, blk_nbr, txn['from'])
-                logging.info('Waiting for block to be canonical')
-                not_yet_canonical = True
-                while not_yet_canonical:
-                    blk2 = self.w3.eth.getBlock('latest')
-                    if blk2['number'] > blk_nbr + 6:
-                        not_yet_canonical = False
-                    else:
-                        time.sleep(0.5)
+        blk_nbr = self.wait_for_txn_process(txn_hash, 0.5)
+
+        logging.info('Waiting for block to be canonical')
+        not_yet_canonical = True
+        while not_yet_canonical:
+            blk = self.w3.eth.getBlock('latest')
+            if blk['number'] > blk_nbr + 6:
+                not_yet_canonical = False
             else:
                 time.sleep(0.5)
 
@@ -118,13 +138,6 @@ class PrivateNetwork:
             block = self.w3.eth.getBlock(block_number)
         return block
 
-    @staticmethod
-    def get_db_dir():
-        return DB_DIR
-
-    def get_db(self):
-        return self.db
-
 
 @pytest.fixture(scope='session')
 def initial_scenario():
@@ -143,8 +156,9 @@ def initial_scenario():
         client_node.wait_for_ipc(timeout=30)
     logging.info('IPC ready')
     w3 = web3.Web3(web3.Web3.IPCProvider(client_node.ipc_path))
-    coinbase = w3.eth.coinbase
+    coinbase = to_normalized_address(w3.eth.coinbase)
     logging.info('Client node started')
+    private_network = PrivateNetwork.init_private_network(client_node, w3, coinbase)
 
     if not RE_USE_DB:
         logging.info('Creating accounts')
@@ -168,17 +182,9 @@ def initial_scenario():
 
         logging.info('Waiting for txns to be added to a block')
         for n in range(NBR_ACCOUNTS):
-            not_yet_in_block = True
             txn_hash = txn_hashes[n]
-            not_yet_in_block = True
-            while not_yet_in_block:
-                txn = w3.eth.getTransaction(txn_hash)
-                blk_nbr = txn['blockNumber']
-                if blk_nbr is not None:
-                    not_yet_in_block = False
-                    logging.info('Transaction added to block\n\ttxn:', '\n\tblock:', txn_hash, blk_nbr)
-                else:
-                    time.sleep(0.5)
+            private_network.wait_for_txn_process(txn_hash, 0.5)
+
         for n in range(NBR_ACCOUNTS):
             logging.info('Acc %s has an initial balance of %i', accounts[n], w3.eth.getBalance(accounts[n]))
             assert w3.eth.getBalance(accounts[n]) == accounts_balances[n]
@@ -193,16 +199,7 @@ def initial_scenario():
                 from_acc = random.choice(accounts)
             txn_hash = w3.eth.sendTransaction({'to': to_acc, 'from': from_acc, 'value': value})
             logging.info('Waiting for txn to be added to a block')
-            not_yet_in_block = True
-            while not_yet_in_block:
-                txn = w3.eth.getTransaction(txn_hash)
-                if txn['blockNumber'] is not None:
-                    not_yet_in_block = False
-                    blk_nbr = txn['blockNumber']
-                    logging.info('Transaction added to block\n\ttxn: %s', '\n\tblock: %i\n\tfrom %s',
-                                 txn_hash, blk_nbr, txn['from'])
-                else:
-                    time.sleep(0.5)
+            private_network.wait_for_txn_process(txn_hash, 0.5)
 
         logging.info('Waiting transactions to become canonical')
         not_yet_canonical = True
@@ -215,39 +212,43 @@ def initial_scenario():
             else:
                 print('.', end='', flush=True)
                 time.sleep(0.5)
+
+        private_network.accounts = accounts
     else:
         accounts = w3.personal.listAccounts
         accounts.remove(coinbase)
+        private_network.accounts = accounts
         logging.info('List of accounts\n%s\ncoinbase %s', accounts, coinbase)
 
     w3.personal.unlockAccount(coinbase, passphrase=ACCOUNT_PASSPHRASE, duration=0)
     compiled_contract = compile_source(CONTRACT_SOURCE_CODE)
     contract_interface = compiled_contract['<stdin>:token']
-    contract = w3.eth.contract(contract_interface['abi'], bytecode=contract_interface['bin'])
-    txn_hash = contract.deploy(transaction={'from': coinbase, 'gas': 410000}, args=(random.randrange(1000, 10000),))
-    not_yet_in_block = True
-    while not_yet_in_block:
-        txn = w3.eth.getTransaction(txn_hash)
-        if txn['blockNumber'] is not None:
-            not_yet_in_block = False
-            blk_nbr = txn['blockNumber']
-            logging.info('Transaction added to block\n\ttxn: %s', '\n\tblock: %i\n\tfrom %s',
-                         txn_hash, blk_nbr, txn['from'])
-        else:
-            time.sleep(0.5)
+    contract_deployed = w3.eth.contract(contract_interface['abi'], bytecode=contract_interface['bin'])
+    supply = random.randrange(10000, 100000)
+    txn_hash = contract_deployed.deploy(transaction={'from': coinbase, 'gas': 410000}, args=(supply,))
+    private_network.wait_for_txn_process(txn_hash, 0.5)
 
     txn_receipt = w3.eth.getTransactionReceipt(txn_hash)
     contract_address = txn_receipt['contractAddress']
+    private_network.contract_address = contract_address
+
+    contract_to_transact = contract_deployed(address=contract_address)
+    nbr_contract_transacts = 4
+    for n in random.sample(range(NBR_ACCOUNTS), nbr_contract_transacts):
+        txn_hash = contract_to_transact.transact({'from': coinbase, 'gas': 410000}).sendCoin(accounts[n],
+                                                                                             supply // nbr_contract_transacts)
+        private_network.wait_for_txn_process(txn_hash, 0.5)
+
+    private_network.contract_storage_size = CONTRACT_NBR_WORDS + nbr_contract_transacts
 
     logging.info('Stop mining')
     w3.miner.stop()
     db = levelDB.LevelDB(DB_DIR)
+    private_network.db = db
 
     # print the contents of the database
     # for k, v in db.db.RangeIter():
     #     print(k, encode_hex(v))
-
-    private_network = PrivateNetwork(client_node, db, w3, coinbase, accounts, contract_address)
 
     logging.info('Private network for testing ready')
     yield private_network

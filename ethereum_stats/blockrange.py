@@ -49,22 +49,22 @@ class BlockHeader:
 
     @classmethod
     def from_rlp(cls, blk_hash, rlp_data):
-        a = rlp.decode(rlp_data)
-        parent_hash = encode_hex(a[0]) if a[0] != b'' else ''
-        ommers_hash = encode_hex(a[1]) if a[1] != b'' else ''
-        beneficiary = encode_hex(a[2]) if a[2] != b'' else ''
-        state_root = encode_hex(a[3]) if a[3] != b'' else ''
-        transactions_root = encode_hex(a[4]) if a[4] != b'' else ''
-        receipts_root = encode_hex(a[5]) if a[5] != b'' else ''
-        logs_bloom = encode_hex(a[6]) if a[6] != b'' else ''
-        difficulty = int.from_bytes(a[7], byteorder='big') if a[7] != b'' else -1
-        number = int.from_bytes(a[8], byteorder='big') if a[8] != b'' else -1
-        gas_limit = int.from_bytes(a[9], byteorder='big') if a[9] != b'' else 0
-        gas_used = int.from_bytes(a[10], byteorder='big') if a[10] != b'' else 0
-        timestamp = int.from_bytes(a[11], byteorder='big') if a[11] != b'' else 0
-        extra_data = encode_hex(a[12]) if a[12] != b'' else ''
-        mix_hash = encode_hex(a[13]) if a[13] != b'' else ''
-        nonce = encode_hex(a[14]) if a[14] != b'' else ''
+        rlp_fields = rlp.decode(rlp_data)
+        parent_hash = encode_hex(rlp_fields[0]) if rlp_fields[0] != b'' else ''
+        ommers_hash = encode_hex(rlp_fields[1]) if rlp_fields[1] != b'' else ''
+        beneficiary = encode_hex(rlp_fields[2]) if rlp_fields[2] != b'' else ''
+        state_root = encode_hex(rlp_fields[3]) if rlp_fields[3] != b'' else ''
+        transactions_root = encode_hex(rlp_fields[4]) if rlp_fields[4] != b'' else ''
+        receipts_root = encode_hex(rlp_fields[5]) if rlp_fields[5] != b'' else ''
+        logs_bloom = encode_hex(rlp_fields[6]) if rlp_fields[6] != b'' else ''
+        difficulty = int.from_bytes(rlp_fields[7], byteorder='big') if rlp_fields[7] != b'' else -1
+        number = int.from_bytes(rlp_fields[8], byteorder='big') if rlp_fields[8] != b'' else -1
+        gas_limit = int.from_bytes(rlp_fields[9], byteorder='big') if rlp_fields[9] != b'' else 0
+        gas_used = int.from_bytes(rlp_fields[10], byteorder='big') if rlp_fields[10] != b'' else 0
+        timestamp = int.from_bytes(rlp_fields[11], byteorder='big') if rlp_fields[11] != b'' else 0
+        extra_data = encode_hex(rlp_fields[12]) if rlp_fields[12] != b'' else ''
+        mix_hash = encode_hex(rlp_fields[13]) if rlp_fields[13] != b'' else ''
+        nonce = encode_hex(rlp_fields[14]) if rlp_fields[14] != b'' else ''
 
         blk_header = cls(blk_hash, parent_hash, ommers_hash,
                          beneficiary, state_root, transactions_root,
@@ -169,9 +169,9 @@ class BlockRange:
 
     @staticmethod
     def get_first_state_in_db(db):
-        blk = BlockHeader.get_latest_block_header_number(db)
+        blk = BlockHeader.get_latest_block_header(db)
         state = StateDataset(db, blk.state_root)
-        step = -1
+        step = -1 * blk.number // 2
         while state.is_in_db:
             blk = BlockHeader.get_block_header_by_number(blk.number + step)
 
