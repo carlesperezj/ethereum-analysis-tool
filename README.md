@@ -10,15 +10,15 @@ sudo apt-get install ethereum
 ```
 ### Install pre-requisites for ethereum Python libraries and Solidity environment
 ```
-sudo apt-get install libssl-dev build-essential automake pkg-config libtool libffi-dev libgmp-dev libyaml-cpp-dev solc
+sudo apt-get install libssl-dev build-essential automake pkg-config libtool libffi-dev libgmp-dev libyaml-cpp-dev solc git python3-tk
 ```
 ### Create a Python virtual environment
 ```
 sudo apt-get install -y python3-dev python3-pip
-pip3 install --upgrade pip
-pip3 install virtualenv
-virtualenv ethereum-analysis-tools
-source ethereum-analysis-tools/bin/activate
+sudo -H pip3 install --upgrade pip
+sudo -H pip3 install virtualenv
+virtualenv ethereum-analysis-tool
+source ethereum-analysis-tool/bin/activate
 ```
 ### Download and install ethereum-analysis-tools
 ```

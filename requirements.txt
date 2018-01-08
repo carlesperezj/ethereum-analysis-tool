@@ -9,7 +9,6 @@ web3
 eth_utils
 py-geth
 py-solc
-python3-tk
 jupyter
 
 
